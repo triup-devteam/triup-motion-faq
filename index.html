@@ -30,6 +30,14 @@
   };
 </script>
 <meta name="description" content="Triup Motion E 고객센터 — 자주 묻는 질문(FAQ)과 제품 업데이트 소식">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Triup Motion E 고객센터">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="Triup Motion E 고객센터">
+<meta property="og:description" content="자주 묻는 질문(FAQ)·사용 매뉴얼·공지사항·업데이트 소식을 한곳에서 확인하세요.">
+<meta property="og:url" content="https://triup-devteam.github.io/triup-motion-faq/">
+<meta property="og:image" content="https://triup-devteam.github.io/triup-motion-faq/images/logo-motion.png">
+<meta name="twitter:card" content="summary">
 <link rel="icon" href="images/logo-motion.png">
 <style>
 :root{
@@ -1841,6 +1849,11 @@ B ↔ C 가족 연결</code></pre><p>위와 같이 연결되어 있어도</p><p>
     return it ? it.querySelector('.qi-text').textContent : '';
   }
   function linkFor(view, id){ return baseUrl() + '#' + view + '/' + docCode(titleOfItem(view, id)); }
+  // 밖으로 보내는 공유 주소는 문서별 미리보기 페이지(d/<섹션>-<코드>/)를 쓴다 → 카카오톡·슬랙 미리보기에 '문서 제목'이 뜬다.
+  // 그 페이지는 og 태그만 있는 껍데기이고, 사람이 열면 JS 로 이 사이트의 #<섹션>/<코드> 로 즉시 넘긴다.
+  // 주소창(history.pushState)에는 쓰지 않는다 — 경로가 바뀌면 images/... 같은 상대경로가 깨진다.
+  // d/ 폴더는 생성물이다. 문서 추가·제목 변경 뒤에는 반드시 다시 생성해야 한다(없으면 그 링크는 404).
+  function shareLinkFor(view, id){ return baseUrl().replace(/[^/]*$/, '') + 'd/' + view + '-' + docCode(titleOfItem(view, id)) + '/'; }
   function urlFor(s){
     if(!s) return baseUrl();
     if(s.screen === 'detail') return linkFor(s.view, s.id);
@@ -1882,7 +1895,7 @@ B ↔ C 가족 연결</code></pre><p>위와 같이 연결되어 있어도</p><p>
       var btn = document.createElement('button');
       btn.type = 'button'; btn.className = 'dp-link'; btn.innerHTML = '🔗 링크 복사';
       btn.addEventListener('click', function(){
-        var url = linkFor(view, id);
+        var url = shareLinkFor(view, id);
         copyText(url).then(function(){ flashBtn(btn, '✅ 복사됨'); }).catch(function(){ flashBtn(btn, '⚠️ 복사 실패'); });
       });
       h2.insertAdjacentElement('afterend', btn);
