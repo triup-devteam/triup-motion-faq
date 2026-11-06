@@ -14,7 +14,8 @@ const SITE_NAME = 'Triup Motion E 고객센터';
 const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 
 // index.html 의 docCode 와 '한 글자도' 같아야 한다 (안 맞으면 리다이렉트가 문서를 못 찾는다)
-function docCode(t){ var s = (t || '').trim(), h = 5381; for(var i = 0; i < s.length; i++){ h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; } return h.toString(36); }
+// FAQ 제목의 'Q. ' 접두어는 해시 입력에서 뺀다 — 접두어를 붙이기 전에 배포한 공유 주소를 그대로 유지하기 위해.
+function docCode(t){ var s = (t || '').trim().replace(/^Q\s*\.\s*/, ''), h = 5381; for(var i = 0; i < s.length; i++){ h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0; } return h.toString(36); }
 
 function dec(s){
   return String(s)
