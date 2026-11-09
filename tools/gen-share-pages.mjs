@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { fileURLToPath } from 'url';
+import { execFileSync } from 'child_process';
 
 // 저장소 루트: 인자로 받거나, 이 파일(tools/) 의 상위 폴더
 const ROOT = path.resolve(process.argv[2] || path.join(path.dirname(fileURLToPath(import.meta.url)), '..'));
@@ -129,6 +130,40 @@ function page(d){
 `;
 }
 
+// ---- 옛 주소 별칭 ----
+// 제목이 바뀌면 docCode 가 달라져 이미 배포한 공유 주소가 404 가 된다.
+// tools/doc-aliases.json 의 aliases: { "<옛 폴더>": "<그 다음 폴더>" }
+// 제목이 두 번 이상 바뀌어도 한 칸씩 따라가 마지막 살아 있는 문서까지 이어간다(연쇄 해석).
+const liveCodes = new Set(docs.map(d => d.view + '-' + d.code));
+const byCode = new Map(docs.map(d => [d.view + '-' + d.code, d]));
+
+const ALIAS_FILE = path.join(ROOT, 'tools', 'doc-aliases.json');
+let aliasRaw = {};
+if(fs.existsSync(ALIAS_FILE)){
+  try {
+    aliasRaw = JSON.parse(fs.readFileSync(ALIAS_FILE, 'utf8')).aliases || {};
+  } catch(e){
+    warn.push('doc-aliases.json 을 읽지 못했다 (별칭 없이 진행): ' + e.message);
+  }
+}
+
+const aliasTargets = new Map(); // 옛 폴더 -> 살아 있는 문서
+for(const from of Object.keys(aliasRaw)){
+  if(liveCodes.has(from)){
+    warn.push('별칭이 살아 있는 주소를 덮으려 한다 (무시): ' + from);
+    continue;
+  }
+  let cur = aliasRaw[from];
+  let hops = 0;
+  while(!liveCodes.has(cur) && aliasRaw[cur] && hops < 20){ cur = aliasRaw[cur]; hops++; }
+  if(!liveCodes.has(cur)){
+    warn.push('별칭의 끝이 지금 문서가 아니다 (건너뜀): ' + from + ' -> ' + cur);
+    continue;
+  }
+  aliasTargets.set(from, byCode.get(cur));
+}
+
+// ---- 폴더 쓰기 ----
 const outDir = path.join(ROOT, 'd');
 fs.rmSync(outDir, { recursive: true, force: true });
 for(const d of docs){
@@ -136,10 +171,53 @@ for(const d of docs){
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(path.join(dir, 'index.html'), page(d), 'utf8');
 }
+// 별칭 폴더는 대상 문서와 같은 내용을 쓴다(og 제목·설명이 그 문서로 나오고, 사람은 그 문서로 넘어간다).
+for(const [from, d] of aliasTargets){
+  const dir = path.join(outDir, from);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'index.html'), page(d), 'utf8');
+}
+
+// ---- 사라진 옛 주소 검사 ----
+// git 이력에 있었는데 이번에 안 만들어지고 별칭도 없는 폴더 = 그 주소로 보낸 링크가 404 가 된다.
+let gone = [];
+try {
+  const commits = execFileSync('git', ['rev-list', 'HEAD', '--', 'd'], { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+  const hist = new Set();
+  for(const c of commits){
+    const out = execFileSync('git', ['ls-tree', '--name-only', c, '--', 'd/'], { cwd: ROOT, encoding: 'utf8' });
+    for(let line of out.split('\n')){
+      if(!line.startsWith('d/')) continue;
+      line = line.slice(2);
+      if(line.endsWith('/')) line = line.slice(0, -1);
+      if(line) hist.add(line);
+    }
+  }
+  gone = [...hist].filter(n => !liveCodes.has(n) && !aliasTargets.has(n)).sort();
+} catch(e){
+  gone = null; // git 이 없거나 저장소가 아니면 검사하지 않는다
+}
 
 const bySec = {};
 for(const d of docs) bySec[d.view] = (bySec[d.view] || 0) + 1;
 console.log('생성:', docs.length, '건', JSON.stringify(bySec));
-console.log('예시:', docs[0].view + '-' + docs[0].code, '→', docs[0].title);
+console.log('예시:', docs[0].view + '-' + docs[0].code, '->', docs[0].title);
+if(aliasTargets.size){
+  console.log('옛 주소 별칭:', aliasTargets.size, '건');
+  for(const [from, d] of aliasTargets) console.log('  ' + from + ' -> ' + d.view + '-' + d.code + '  (' + d.title + ')');
+} else {
+  console.log('옛 주소 별칭: 없음');
+}
+if(gone === null){
+  console.log('사라진 옛 주소 검사: 건너뜀 (git 확인 불가)');
+} else if(gone.length){
+  console.log('');
+  console.log('--- 링크가 죽은 옛 주소 ' + gone.length + '건 ---');
+  console.log('  제목이 바뀐 문서다. tools/doc-aliases.json 의 aliases 에 아래 줄을 넣고 다시 돌릴 것:');
+  for(const n of gone) console.log('    "' + n + '": "<지금 주소>",');
+} else {
+  console.log('사라진 옛 주소: 없음 (지금까지 배포한 공유 링크가 모두 열린다)');
+}
 if(warn.length){ console.log('\n--- 확인 필요 ---'); warn.forEach(w => console.log('  ' + w)); }
 else console.log('경고 없음');
